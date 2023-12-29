@@ -11,6 +11,7 @@ pub mod playerdb;
 pub mod dbrms;
 pub mod mm;
 pub mod errors;
+pub mod resp_msg;
 
 // *  [USE]
 pub use db::*;
