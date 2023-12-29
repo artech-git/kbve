@@ -14,13 +14,12 @@ use kbve::{
 	mm::{ graceful },
 	harden::{ cors_service, fallback },
 	helper::{ health_check, speed_test, root_endpoint },
-	wh::{ APISessionStore, GLOBAL, TokenSchema },
+	wh::{ APISessionStore, GLOBAL },
 	playerdb::{
 		hazardous_global_init,
 		task_logout_user,
 		api_get_process_guest_email,
 		api_get_process_username,
-		api_post_process_register_user_handler,
 		throwaway_api_get_process_discord_uuid,
 		throwaway_api_get_process_n8n_webhook_from_username,
 		throwaway_api_get_process_github_uuid,
@@ -45,7 +44,7 @@ async fn main() {
 		Err(e) => println!("Global Map -> fail -> {}", e),
 	}
 
-	let corslight = cors_service();
+	let corslight = cors_service()?;
 
 	let api_routes = Router::new()
 		.route("/health", get(health_check))

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 
 //  * [MODS]
 pub mod db;
@@ -10,6 +10,7 @@ pub mod wh;
 pub mod playerdb;
 pub mod dbrms;
 pub mod mm;
+pub mod errors;
 
 // *  [USE]
 pub use db::*;
