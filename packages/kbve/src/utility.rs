@@ -5,7 +5,7 @@ use tower_http::cors::CorsLayer;
 use axum::{
 	response::{ IntoResponse },
 	http::{
-		header::{ ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName },
+		header,
 		HeaderValue,
 		StatusCode,
 		Method,
@@ -107,7 +107,7 @@ pub fn sanitize_email(email: &str) -> Result<String, &str> {
 	}
 }
 
-pub fn sanitize_username(username: &str) -> Result<String, &str> {
+pub fn sanitize_username(username: &str) -> ProcessResult<String> {
 	let sanitized: String = username
 		.chars()
 		.filter(|c| c.is_alphanumeric() && c.is_ascii())
@@ -122,7 +122,7 @@ pub fn sanitize_username(username: &str) -> Result<String, &str> {
 	}
 
 	if sanitized != username {
-		return Err("Username contains invalid characters");
+		return Err("Username contains invalid characters".into());
 	}
 
 	if sanitized.is_empty() {
@@ -269,40 +269,67 @@ pub fn generate_ulid_as_string() -> String {
 }
 
 
+pub fn num_to_bigint(uuid_str: &str) -> Result<Uuid, &'static str> {
+	let uuid = Uuid::from_str(uuid_str).map_err(|_| "Invalid UUID format")?;
+	let bytes = uuid.as_bytes();
+	Ok(BigUint::from_bytes_be(bytes))
+}
+
+
 //?         [FALLBACK]
 pub async fn fallback(uri: Uri) -> impl IntoResponse {
-	let final_path = sanitize_path(&uri.to_string());
+	let final_path = sanitize_path(uri.path());
 
 	let response = WizardResponse {
 		data: serde_json::json!({"status": "error"}),
-		message: serde_json::json!({"path": final_path.to_string()}),
+		message: serde_json::json!({"path": final_path}),
 	};
 
 	(StatusCode::NOT_FOUND, Json(response))
 }
 
-//?         [CORS]
-pub fn cors_service() -> CorsLayer {
-	let orgins = [
-		"https://herbmail.com".parse::<HeaderValue>().unwrap(),
-		"https://kbve.com".parse::<HeaderValue>().unwrap(),
-		"https://discord.sh".parse::<HeaderValue>().unwrap(),
-		"https://hoppscotch.io".parse::<HeaderValue>().unwrap(),
-		"http://localhost:3000".parse::<HeaderValue>().unwrap(),
-		"https://kbve.itch.io".parse::<HeaderValue>().unwrap(),
-	];
+pub fn cors_service() -> ProcessResult<CorsLayer> {
 
-	CorsLayer::new()
-		.allow_origin(orgins)
-		.allow_methods([Method::PUT, Method::GET, Method::DELETE, Method::POST])
+	let origins = [
+			"https://herbmail.com",
+			"https://kbve.com",
+			"https://discord.sh",
+			"http://localhost:3000",
+			"https://kbve.itch.io"
+		];
+
+	let allowed_origins = {
+		let mut allowed_origins = vec![]; 
+
+		for header in origins.into_iter() { 
+			let parsed_header = HeaderValue::from_str(header)?;
+			allowed_origins.push(parsed_header);
+		}
+		allowed_origins
+	};
+
+	let allowed_methods = { 
+		[Method::PUT, Method::GET, Method::DELETE, Method::POST]
+	};
+
+	let allowed_headers = { 
+		[
+			header::AUTHORIZATION,
+			header::ACCEPT,
+			header::CONTENT_TYPE,
+			header::HeaderName::from_static("x-kbve-shieldwall"),
+			header::HeaderName::from_static("x-kbve-api"),
+		]
+	};
+
+
+	let cors_layer = CorsLayer::new()
+		.allow_origin(allowed_origins)
+		.allow_methods(allowed_methods)
 		.allow_credentials(true)
-		.allow_headers([
-			AUTHORIZATION,
-			ACCEPT,
-			CONTENT_TYPE,
-			HeaderName::from_static("x-kbve-shieldwall"),
-			HeaderName::from_static("x-kbve-api"),
-		])
+		.allow_headers(allowed_headers);
+
+	Ok(cors_layer)
 }
 
 //?         [CAPTCHA]
@@ -312,7 +339,7 @@ pub async fn verify_captcha(
 	let secret = match crate::runes::GLOBAL.get() {
 		Some(global_map) =>
 			match global_map.get("hcaptcha") {
-				Some(value) => value.value().clone(),
+				Some(value) => value.value().to_owned(),
 				None => {
 					return Err("missing_captcha".into());
 				}
@@ -322,17 +349,20 @@ pub async fn verify_captcha(
 		}
 	};
 
-	let client = Client::new();
-	let mut params = HashMap::new();
-	params.insert("response", captcha_token);
-	params.insert("secret", secret.as_str());
+	let mut params = { 
+		[
+			("response", captcha_token).into(), 
+			("secret", secret.as_str()).into()
+		]
+	};
 
-	let res = client
+	let res = (reqwest::Client::new())
 		.post("https://api.hcaptcha.com/siteverify")
 		.form(&params)
-		.send().await?;
+		.send()
+		.await?;
 
-	let captcha_response: crate::runes::CaptchaResponse = res.json().await?;
+	let captcha_response: CaptchaResponse = res.json().await?;
 	Ok(captcha_response.success)
 }
 

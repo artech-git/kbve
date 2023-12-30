@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 
 //  * [MODS]
 pub mod schema;
@@ -9,6 +9,7 @@ pub mod guild;
 pub mod spellbook;
 pub mod runes;
 pub mod authentication;
+pub mod errors;
 
 
 pub use schema::*;
@@ -19,3 +20,4 @@ pub use guild::*;
 pub use spellbook::*;
 pub use runes::*;
 pub use authentication::*;
+pub use errors::*;
