@@ -10,7 +10,7 @@ pub mod spellbook;
 pub mod runes;
 pub mod authentication;
 pub mod errors;
-
+pub mod resp_msg;
 
 pub use schema::*;
 pub use db::*;

@@ -3,7 +3,7 @@
 
 use tower_http::cors::CorsLayer;
 use axum::{
-	response::{ IntoResponse },
+	response::IntoResponse,
 	http::{
 		header,
 		HeaderValue,
@@ -35,12 +35,12 @@ use tokio::task;
 
 use ulid::Ulid;
 
-use crate::runes::{ WizardResponse };
+use crate::{runes::WizardResponse, error_types::ProcessResult, CaptchaResponse, resp_msg::RESPONSE_MESSAGES};
 use crate::db::Pool;
 
-use crate::{ spellbook_pool_conn}; 
+use crate::spellbook_pool_conn; 
 
-use crate::schema::{ globals };
+use crate::schema::globals;
 
 
 //*         [REGEX]
@@ -65,15 +65,15 @@ pub static UNSPLASH_PHOTO_ID_REGEX: Lazy<Regex> = Lazy::new(||
 
 //*         [VALIDATION]
 
-pub fn validate_password(password: &str) -> Result<(), &str> {
+pub fn validate_password(password: &str) -> ProcessResult<()> {
 	// Check if the password is long enough (e.g., at least 8 characters)
 	if password.chars().count() < 8 {
-		return Err("Password is too short");
+		return Err(RESPONSE_MESSAGES::INVALID_PASSWORD.into());
 	}
 
 	// Check if the password is not too long (e.g., no more than 255 characters)
 	if password.chars().count() > 255 {
-		return Err("Password is too long");
+		return Err(RESPONSE_MESSAGES::INVALID_PASSWORD.into());
 	}
 
 	// Check for a mix of uppercase and lowercase characters, numbers, and special characters
@@ -83,9 +83,7 @@ pub fn validate_password(password: &str) -> Result<(), &str> {
 	let has_special = password.chars().any(|c| !c.is_alphanumeric());
 
 	if !has_uppercase || !has_lowercase || !has_digit || !has_special {
-		return Err(
-			"Password must include uppercase, lowercase, digits, and special characters"
-		);
+		return Err(RESPONSE_MESSAGES::INVALID_PASSWORD.into());
 	}
 
 	Ok(())
@@ -93,17 +91,17 @@ pub fn validate_password(password: &str) -> Result<(), &str> {
 
 //*         [SANITIZATION]
 
-pub fn sanitize_email(email: &str) -> Result<String, &str> {
+pub fn sanitize_email(email: &str) -> ProcessResult<String> {
 	let email = email.trim().to_lowercase();
 
 	if email.chars().count() > 254 {
-		return Err("Email is more than 254 characters");
+		return Err(RESPONSE_MESSAGES::INVALID_EMAIL.into());
 	}
 
 	if EMAIL_REGEX.is_match(&email) {
 		Ok(email)
 	} else {
-		Err("Invalid email format")
+		Err(RESPONSE_MESSAGES::INVALID_EMAIL.into())
 	}
 }
 
@@ -114,37 +112,37 @@ pub fn sanitize_username(username: &str) -> ProcessResult<String> {
 		.collect();
 
 	if sanitized.chars().count() < 6 {
-		return Err("Username is too short");
+		return Err(crate::resp_msg::RESPONSE_MESSAGES::USERNAME_INVALID.into());
 	}
 
 	if sanitized.chars().count() > 255 {
-		return Err("Username is too long");
+		return Err(RESPONSE_MESSAGES::INVALID_USERNAME.into());
 	}
 
 	if sanitized != username {
-		return Err("Username contains invalid characters".into());
+		return Err(RESPONSE_MESSAGES::INVALID_USERNAME.into());
 	}
 
 	if sanitized.is_empty() {
-		return Err("Username cannot be empty");
+		return Err(RESPONSE_MESSAGES::USERNAME_NOT_FOUND.into());
 	}
 
 	Ok(sanitized)
 }
 
-pub fn sanitizie_ulid(ulid_str: &str) -> Result<&str, &'static str> {
+pub fn sanitizie_ulid(ulid_str: &str) -> ProcessResult<&str> {
 	// ULID is usually 26 chars.
 	if ulid_str.len() != 26 {
-		return Err("ulid_invalid");
+		return Err(RESPONSE_MESSAGES::INVALID_ULID.into());
 	}
 
 	// Crockford's base32 set
-	let base32_chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+	static BASE32_CHARS: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 	// Validate each character
 	for c in ulid_str.chars() {
-		if !base32_chars.contains(c) {
-			return Err("Invalid character in ULID");
+		if !BASE32_CHARS.contains(c) {
+			return Err(RESPONSE_MESSAGES::INVALID_ULID_DATA.into());
 		}
 	}
 
@@ -230,7 +228,7 @@ pub fn extract_unsplash_photo_id(url: &str) -> Option<String> {
 
 pub async fn global_map_init(
 	pool: Arc<Pool>
-) -> Result<DashMap<String, String>, &'static str> {
+) -> ProcessResult<DashMap<String, String>> {
 	let mut conn = spellbook_pool_conn!(pool);
 
 	let map = DashMap::new();
@@ -242,7 +240,7 @@ pub async fn global_map_init(
 	{
 		Ok(results) => {
 			if results.is_empty() {
-				Err("empty_case")
+				Err(RESPONSE_MESSAGES::EMPTY_SET.into())
 			} else {
 				for (key, value) in results {
 					println!("key {} inserted", key.to_string());
@@ -251,8 +249,8 @@ pub async fn global_map_init(
 				Ok(map)
 			}
 		}
-		Err(diesel::NotFound) => Err("not_found_error"),
-		Err(_) => { Err("database_error") }
+		Err(diesel::NotFound) => Err(RESPONSE_MESSAGES::INVALID_GLOBAL_MAP.into()), 
+		Err(_) => { Err(RESPONSE_MESSAGES::DATABASE_ERROR.into()) }
 	}
 }
 
@@ -269,11 +267,11 @@ pub fn generate_ulid_as_string() -> String {
 }
 
 
-pub fn num_to_bigint(uuid_str: &str) -> Result<Uuid, &'static str> {
-	let uuid = Uuid::from_str(uuid_str).map_err(|_| "Invalid UUID format")?;
-	let bytes = uuid.as_bytes();
-	Ok(BigUint::from_bytes_be(bytes))
-}
+// pub fn num_to_bigint(uuid_str: &str) -> Result<Uuid, &'static str> {
+// 	let uuid = Uuid::from_str(uuid_str).map_err(|_| "Invalid UUID format")?;
+// 	let bytes = uuid.as_bytes();
+// 	Ok(BigUint::from_bytes_be(bytes))
+// }
 
 
 //?         [FALLBACK]
@@ -322,7 +320,6 @@ pub fn cors_service() -> ProcessResult<CorsLayer> {
 		]
 	};
 
-
 	let cors_layer = CorsLayer::new()
 		.allow_origin(allowed_origins)
 		.allow_methods(allowed_methods)
@@ -335,24 +332,24 @@ pub fn cors_service() -> ProcessResult<CorsLayer> {
 //?         [CAPTCHA]
 pub async fn verify_captcha(
 	captcha_token: &str
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> ProcessResult<bool> {
 	let secret = match crate::runes::GLOBAL.get() {
 		Some(global_map) =>
 			match global_map.get("hcaptcha") {
 				Some(value) => value.value().to_owned(),
 				None => {
-					return Err("missing_captcha".into());
+					return Err(RESPONSE_MESSAGES::CAPTCHA_ERROR.into());
 				}
 			}
 		None => {
-			return Err("invalid_global_map".into());
+			return Err(RESPONSE_MESSAGES::INVALID_GLOBAL_MAP.into());
 		}
 	};
 
 	let mut params = { 
 		[
-			("response", captcha_token).into(), 
-			("secret", secret.as_str()).into()
+			("response", captcha_token), 
+			("secret", secret.as_str())
 		]
 	};
 
@@ -370,7 +367,7 @@ pub async fn verify_captcha(
 
 //?         [ENDPOINT]
 
-pub async fn root_endpoint() -> Result<Json<WizardResponse>, StatusCode> {
+pub async fn root_endpoint() -> ProcessResult<Json<WizardResponse>> {
 	Ok(
 		Json(WizardResponse {
 			data: serde_json::json!({"status": "online"}),
@@ -381,10 +378,9 @@ pub async fn root_endpoint() -> Result<Json<WizardResponse>, StatusCode> {
 
 //?         [HEALTHCHECK]
 
-pub async fn health_check(Extension(pool): Extension<Arc<Pool>>) -> Result<
-	Json<WizardResponse>,
-	StatusCode
-> {
+pub async fn health_check(Extension(pool): Extension<Arc<Pool>>) 
+-> ProcessResult<Json<WizardResponse>> 
+{
 	let connection_result = task::spawn_blocking(move || { pool.get() }).await;
 
 	match connection_result {
@@ -396,16 +392,15 @@ pub async fn health_check(Extension(pool): Extension<Arc<Pool>>) -> Result<
 				})
 			)
 		}
-		_ => { Err(StatusCode::SERVICE_UNAVAILABLE) }
+		_ => { Err(RESPONSE_MESSAGES::SERVICE_UNAVAILABLE.into()) }
 	}
 }
 
 //?         [SPEED]
 
-pub async fn speed_test(Extension(pool): Extension<Arc<Pool>>) -> Result<
-	Json<WizardResponse>,
-	StatusCode
-> {
+pub async fn speed_test(Extension(pool): Extension<Arc<Pool>>) 
+-> ProcessResult<Json<WizardResponse>> 
+{
 	let start_time = Instant::now();
 
 	// Use `block_in_place` or `spawn_blocking` for the blocking database operation
@@ -416,7 +411,7 @@ pub async fn speed_test(Extension(pool): Extension<Arc<Pool>>) -> Result<
 		diesel
 			::sql_query("SELECT 1")
 			.execute(&mut conn)
-			.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
+			.map_err(|_| RESPONSE_MESSAGES::SERVICE_UNAVAILABLE.into())
 	});
 
 	match query_result {

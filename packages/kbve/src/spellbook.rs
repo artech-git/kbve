@@ -133,7 +133,7 @@ macro_rules! spellbook_pool_conn {
 	($pool:expr) => {
         match $pool.get() {
             Ok(conn) => conn,
-            Err(_) => return Err("Failed to get a connection from the pool!"),
+            Err(_) => return Err(crate::resp_msg::RESPONSE_MESSAGES::DATABASE_POOL_ERROR.into()),
         }
 	};
 }

@@ -187,7 +187,7 @@ impl AuthPlayerRegisterSchema {
 		match crate::utility::validate_password(&self.password) {
 			Ok(_) => {}
 			Err(e) => {
-				return Err(e.to_string());
+				return Err(e);
 			}
 		}
 
@@ -219,7 +219,7 @@ pub struct WizardResponse {
 
 #[derive(Serialize, Deserialize)]
 pub struct CaptchaResponse {
-	success: bool,
+	pub success: bool,
 }
 
 impl IntoResponse for WizardResponse {

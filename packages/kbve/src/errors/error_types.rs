@@ -1,5 +1,10 @@
 use std::panic::Location; 
 use std::backtrace::Backtrace;
+use std::fmt::Display;
+
+use reqwest::header::InvalidHeaderValue;
+
+use crate::resp_msg::RESPONSE_MESSAGES;
 
 pub type ProcessResult<T> = std::result::Result<T, FragmentError>; 
 
@@ -46,5 +51,15 @@ where T: Into<ErrorsVariants>
 pub enum ErrorsVariants { 
 
     #[error("{0:?}")]
-    StringError(#[from] String)
+    ProcessingError(RESPONSE_MESSAGES),
+    
+    #[error("The header value init failed for the value: {0}")]
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
+
+    #[error("Reqwest Client error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+
+
+    // #[error("{0:?}")]
+    // StringError(#[from] &'static String)
 }
